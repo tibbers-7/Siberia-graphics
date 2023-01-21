@@ -51,6 +51,13 @@ struct Input {
     bool Down;
 };
 
+enum ShadingMode {
+    GOURAUD = 0,
+    PHONG,
+    PHONG_MATERIAL,
+    PHONG_MATERIAL_TEXTURE
+};
+
 struct Renderer {
     unsigned mCurrRenderableIdx;
     std::vector<IRenderable*> mRenderables;
@@ -63,6 +70,7 @@ struct EngineState {
     Input* mInput;
     Renderer* mRenderer;
     float mDT;
+    unsigned mShadingMode;
 };
 
 /**
@@ -96,6 +104,10 @@ KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mode) {
         case GLFW_KEY_W: UserInput->Up = IsDown; break;
         case GLFW_KEY_S: UserInput->Down = IsDown; break;
         case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
+
+
+        case GLFW_KEY_1: State->mShadingMode = 0; break;
+        case GLFW_KEY_2: State->mShadingMode = 1; break;
     }
 }
 
@@ -141,6 +153,7 @@ HandleInput(EngineState* state) {
     if(UserInput->Right) Camera->Rotate(0.5f, 0.0f, dt);
     if(UserInput->Down) Camera->Rotate(0.0f, 0.5f, dt);
     if(UserInput->Up) Camera->Rotate(0.0f, -0.5f, dt);
+
 }
 
 float GetRadians(float angle) {
@@ -192,7 +205,21 @@ int main() {
         return -1;
     }
 
+    EngineState State = { 0 };
     OrbitalCamera Camera(45.0f, 14.0f);
+    Input UserInput = { 0 };
+  
+    State.mInput = &UserInput;
+
+    glfwSetWindowUserPointer(Window, &State);
+
+    glfwSetErrorCallback(ErrorCallback);
+    glfwSetFramebufferSizeCallback(Window, FramebufferSizeCallback);
+    glfwSetKeyCallback(Window, KeyCallback);
+
+    glViewport(0.0f, 0.0f, WindowWidth, WindowHeight);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
 
     Shader BasicShader("shaders/basic.vert", "shaders/basic.frag");
     float RenderDistance = 100.0f;
@@ -214,6 +241,40 @@ int main() {
         return -1;
     }
 
+    
+
+    //// NOTE(Jovan): Phong shader with material and texture support
+    Shader PhongShaderMaterialTexture("shaders/basic.vert", "shaders/phong_material_texture.frag");
+    glUseProgram(PhongShaderMaterialTexture.GetId());
+    PhongShaderMaterialTexture.SetUniform3f("uDirLight.Direction", glm::vec3(1.0f, -1.0f, 0.0f));
+    PhongShaderMaterialTexture.SetUniform3f("uDirLight.Ka", glm::vec3(0.0f, 0.0f, 0.1f));
+    PhongShaderMaterialTexture.SetUniform3f("uDirLight.Kd", glm::vec3(0.0f, 0.0f, 0.1f));
+    PhongShaderMaterialTexture.SetUniform3f("uDirLight.Ks", glm::vec3(1.0f));
+
+    PhongShaderMaterialTexture.SetUniform3f("uPointLight.Ka", glm::vec3(0.0f, 0.2f, 0.0f));
+    PhongShaderMaterialTexture.SetUniform3f("uPointLight.Kd", glm::vec3(0.0f, 0.5f, 0.0f));
+    PhongShaderMaterialTexture.SetUniform3f("uPointLight.Ks", glm::vec3(1.0f));
+    PhongShaderMaterialTexture.SetUniform1f("uPointLight.Kc", 1.0f);
+    PhongShaderMaterialTexture.SetUniform1f("uPointLight.Kl", 0.092f);
+    PhongShaderMaterialTexture.SetUniform1f("uPointLight.Kq", 0.032f);
+
+    PhongShaderMaterialTexture.SetUniform3f("uSpotlight.Position", glm::vec3(0.0f, 3.5f, -2.0f));
+    PhongShaderMaterialTexture.SetUniform3f("uSpotlight.Direction", glm::vec3(0.0f, -1.0f, 1.0f));
+    PhongShaderMaterialTexture.SetUniform3f("uSpotlight.Ka", glm::vec3(0.2f, 0.0f, 0.0f));
+    PhongShaderMaterialTexture.SetUniform3f("uSpotlight.Kd", glm::vec3(0.5f, 0.0f, 0.0f));
+    PhongShaderMaterialTexture.SetUniform3f("uSpotlight.Ks", glm::vec3(1.0f));
+    PhongShaderMaterialTexture.SetUniform1f("uSpotlight.Kc", 1.0f);
+    PhongShaderMaterialTexture.SetUniform1f("uSpotlight.Kl", 0.092f);
+    PhongShaderMaterialTexture.SetUniform1f("uSpotlight.Kq", 0.032f);
+    PhongShaderMaterialTexture.SetUniform1f("uSpotlight.InnerCutOff", glm::cos(glm::radians(12.5f)));
+    PhongShaderMaterialTexture.SetUniform1f("uSpotlight.OuterCutOff", glm::cos(glm::radians(17.5f)));
+    //// NOTE(Jovan): Diminishes the light's diffuse component by half, tinting it slightly red
+    PhongShaderMaterialTexture.SetUniform1i("uMaterial.Kd", 0);
+    //// NOTE(Jovan): Makes the object really shiny
+    PhongShaderMaterialTexture.SetUniform1i("uMaterial.Ks", 1);
+    PhongShaderMaterialTexture.SetUniform1f("uMaterial.Shininess", 128.0f);
+    glUseProgram(0);
+
     Renderer Renderer = { 0 };
     Renderer.mFramebufferSize = glm::vec2(WindowWidth, WindowHeight);
     Renderer.mRenderables.push_back(&BasicCube);
@@ -224,8 +285,8 @@ int main() {
     Renderer.mRenderables.push_back(&Fish);
     Renderer.mScalingFactor = 1.0f;
 
-    EngineState State = { 0 };
-    Input UserInput = { 0 };
+    
+   // Input UserInput = { 0 };
     glfwSetWindowUserPointer(Window, &State);
     State.mOrbitalCamera = &Camera;
     State.mInput = &UserInput;
@@ -235,11 +296,18 @@ int main() {
     float EndTime = glfwGetTime();
     float TargetFrameTime = 1.0f / TargetFPS;
 
+
     glEnable(GL_DEPTH_TEST);
     glCullFace(GL_BACK);
 
+    glm::mat4 Projection = glm::perspective(45.0f, WindowWidth / (float)WindowHeight, 0.1f, 100.0f);
+    
+
     float x = 0, y = 0, z = 0;
+    Shader* CurrentShader = &PhongShaderMaterialTexture;
+
     while (!glfwWindowShouldClose(Window)) {
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glfwPollEvents();
         glClearColor(0.3, 0.7, 1, 1);
@@ -250,6 +318,12 @@ int main() {
         glUseProgram(BasicShader.GetId());
         FreeView = glm::lookAt(Camera.mPosition, Camera.mPosition + Camera.mFront, Camera.mUp);
         BasicShader.SetView(FreeView);
+
+        Projection = glm::perspective(45.0f, WindowWidth / (float)WindowHeight, 0.1f, 100.0f);
+        glUseProgram(CurrentShader->GetId());
+        CurrentShader->SetProjection(Projection);
+
+
 
         float WindowWidth = Renderer.mFramebufferSize.x;
         float WindowHeight = Renderer.mFramebufferSize.y;
@@ -289,6 +363,9 @@ int main() {
         m = glm::scale(m, glm::vec3(4.0f, 5.0f, 1.5f));
         m = glm::translate(m, glm::vec3(-0.6f, 0.6f, 2.5f));
         BasicShader.SetModel(m);
+        ModelMatrix = glm::mat4(1.0f);
+        ModelMatrix = glm::translate(ModelMatrix, glm::vec3(0.0f, 1.0f, -2.0f));
+        CurrentShader->SetModel(ModelMatrix);
         Renderer.mRenderables[2]->Render();
 
         //hole
@@ -313,6 +390,14 @@ int main() {
         BasicShader.SetModel(m);
         Renderer.mRenderables[5]->Render();
 
+        glm::vec3 PointLightPosition(2.0f, 2.0f, -2.0f);
+
+        ModelMatrix = glm::translate(ModelMatrix, PointLightPosition);
+        ModelMatrix = glm::scale(ModelMatrix, glm::vec3(0.5f));
+        BasicShader.SetModel(ModelMatrix);
+        //glBindVertexArray(CubeVAO);
+        BasicShader.SetUniform3f("uColor", glm::vec3(0.0f, 1.0f, 0.0f));
+        glDrawArrays(GL_TRIANGLES, 0, 36);
 
         glUseProgram(0);
         glfwSwapBuffers(Window);
